@@ -1,46 +1,51 @@
 pipeline {
     agent any
     stages {
+        // 阶段1：拉取代码
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        // 阶段2：构建Docker镜像
         stage('Build Image') {
             steps {
-                script {  // 必须包裹在 script 块中
-                    docker.build("teedy2025_manual")
+                script {
+                    sh 'docker build -t teedy2025_manual .'
                 }
             }
         }
+
+        // 阶段3：运行三个容器（关键修改部分）
         stage('Run Containers') {
             steps {
                 script {
-                    // 停止旧容器（忽略错误）
                     sh '''
-                        docker stop teedy-8082 || true
-                        docker rm teedy-8082 || true
-                        docker stop teedy-8083 || true
-                        docker rm teedy-8083 || true
-                        docker stop teedy-8084 || true
-                        docker rm teedy-8084 || true
+                        # 停止并删除旧容器（忽略错误）
+                        docker stop teedy-8082 teedy-8083 teedy-8084 || true
+                        docker rm teedy-8082 teedy-8083 teedy-8084 || true
+
+                        # 启动三个新容器
+                        docker run -d -p 8082:8080 --name teedy-8082 teedy2025_manual
+                        docker run -d -p 8083:8080 --name teedy-8083 teedy2025_manual
+                        docker run -d -p 8084:8080 --name teedy-8084 teedy2025_manual
+
+                        # 验证容器状态
+                        echo "当前运行的容器："
+                        docker ps --filter "name=teedy-"
                     '''
-                    // 启动新容器
-                    docker.run(
-                        image: 'teedy2025_manual',
-                        name: 'teedy-8082',
-                        ports: ['8082:8080'],
-                        detach: true
-                    )
-                    docker.run(
-                        image: 'teedy2025_manual',
-                        name: 'teedy-8083',
-                        ports: ['8083:8080'],
-                        detach: true
-                    )
-                    docker.run(
-                        image: 'teedy2025_manual',
-                        name: 'teedy-8084',
-                        ports: ['8084:8080'],
-                        detach: true
-                    )
                 }
             }
+        }
+    }
+    
+    post {
+        always {
+            // 归档构建产物（可选）
+            archiveArtifacts artifacts: '**/target/*.?ar', fingerprint: true  
+            // 保存测试报告（可选）
+            junit '**/target/surefire-reports/*.xml'  
         }
     }
 }
